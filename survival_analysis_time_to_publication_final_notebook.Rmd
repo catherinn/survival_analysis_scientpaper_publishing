@@ -1,0 +1,605 @@
+---
+title: "Time to publication protocol Survival Analysis"
+author: " Chidiac kieffer NKWAMEN NANA Julien",	"Louis Baranzelli ", "Katarina Lechner", "Julien Guyot"
+date: "14/07/2023"
+output: pdf_document
+---
+
+The goal of our survival analysis is To examine the length of time between
+receiving funding and publishing the protocol and main paper for randomised controlled trials.
+The source of the data: https://figshare.com/articles/dataset/Time_to_publication_data/4054878
+
+
+```{r}
+#import library
+library("ggplot2")
+library("readxl")
+library("dplyr")
+library(survival)
+library(tidyverse)
+library(ggstatsplot)
+library("comprehenr")
+library("gridExtra")
+```
+
+# Fisrt, we start the analysis by loading the data data, cleaning and make EDA Analysis before starting predictions part.
+
+```{r}
+rawData <- read_excel("Publication.time.barnett.xlsx")
+rawData
+```
+
+```{r}
+# renaming colnames for more convenience
+myData <- rawData %>% rename("nbMembers"="members",
+                             "fundingAwarded"="money",
+                             "fundingYears"="funding.years",
+                             "estimatedSampleSize"="estsampsize",
+                             "timeToProtocol"="time.from.funding.prot",
+                             "eventProtocol"="protocolpaper.event",
+                             "timeToMainPaper"="time.from.funding",
+                             "eventPaper"="mainpaper.event")
+
+```
+
+#The meaning of the columns in the dataset is as follows:
+* nbMembers = number of investigators
+* fundingAwarded = funding awarded ($AUD); scrambled by -/+ $1000
+* fundingYears= length of funding in years
+* estimatedSampleSize = estimated sample size (some missing)
+* timeToProtocol = time in years from funding until protocol paper was published (or censored)
+* eventProtocol = protocol paper published (1=yes, 0=censored)
+* timeToMainPaper = time in years from funding until main paper was published (or censored)
+* eventPaper (1=yes, 0=censored)
+
+Note: Main paper presents the results of a research study, a protocol paper outlines the plan for conducting the study.
+
+
+```{r}
+summary(myData)
+```
+From the summary, we see the following:
+* We have 77 observations
+* In the timeToProtocol column the minimum value is negative -> we assume that the  protocol in this case was written before the study has started, so we will keep the value as is
+* The estsampsize is of type character -> this is because we have NA values in it. We will remove these as they are only 2 rows with this value.
+* Based on the eventPaper mean which is 0.5, we see that half of the observations have a value 1 and half a value 0. The sample is balanced.
+
+
+
+Cleaning of the datas : remove NA values.
+Our dataset is now 74 observations.
+
+```{r}
+myData <- myData[complete.cases(myData),]
+myData$estimatedSampleSize <- as.numeric(myData$estimatedSampleSize)
+```
+
+Create Box-and-Whiskers plot with violin plots.
+```{r}
+
+plotProtocol <- ggstatsplot::ggbetweenstats(
+  data = myData,
+  x = eventProtocol, #grouping variable
+  y = timeToProtocol, #dependent variable 
+  # type = "robust", ## type of statistics
+  xlab = "Event outcome", ## label for the x-axis
+  ylab = "Time to protocol (years)", ## label for the y-axis
+  title = "Protocol distributions",
+  plottype = "box", type = "p", conf.level = 0.95, results.subtitle = FALSE,
+  ) + ## modifying the plot further
+  ggplot2::scale_y_continuous(
+    limits = c(-1, 9),
+    breaks = seq(from = -1, to = 9, by = 1)
+  )
+
+plotMainPaper <- ggstatsplot::ggbetweenstats(
+  data = myData,
+  x = eventPaper, #grouping variable
+  y = timeToMainPaper, #dependent variable 
+  # type = "robust", ## type of statistics
+  xlab = "Event outcome", ## label for the x-axis
+  ylab = "Time to main Paper (years)", ## label for the y-axis
+  title = "Paper distributions",
+  # caption = "Source: J. Capitaine",
+  plottype = "box", type = "p", conf.level = 0.95, results.subtitle = FALSE,
+  ) + ## modifying the plot further
+  ggplot2::scale_y_continuous(
+    limits = c(-1, 9),
+    breaks = seq(from = -1, to = 9, by = 1)
+  )
+
+require(gridExtra)
+grid.arrange(plotProtocol, plotMainPaper, ncol=2)
+```
+
+From the exploratory analysis of the data and the plots we see the following:
+* It is not mandatory to publish a protocol before publishing the main paper. In these cases (eventProtocol == 0), the timeToProtocol has a median of 6.99 
+* the data in terms of eventProtocol is relatively balanced (31 (0) vs 43 (1))
+* the distribution of eventProtocol == 1 is slightly right-skewed. We don't see any outliers in terms of timeToProtocol
+* in terms of Paper distributions,  data is balanced (37 samples for both values of eventPaper 0 and 1)
+* same as before, for eventPaper == 0, the mean and median are much higher than for cases eventPaper == 1
+* the distribution of eventPaper == 1 is slightly left-skewed. Same as before, we don't see any outliers in the data
+
+
+
+```{r}
+#grouped bar chart.
+library(ggplot2)
+
+
+col1 <- c(rep("Protocol Paper", nrow(myData)), rep("Main Paper", nrow(myData)))
+col2 <- c(myData$eventProtocol, myData$eventPaper)
+
+ 
+
+flip_results <- data.frame(event = factor(col1, levels = c("Protocol Paper", "Main Paper")),
+                outcome = col2)
+
+ 
+
+outcomeData <- data.frame(table(flip_results))
+
+ggplot(data = outcomeData, aes(x = outcome, y = Freq, fill = event)) +
+  geom_bar(stat = "identity", position = position_dodge(), alpha = 0.75)  +
+  ylim(0,50) +
+  geom_text(aes(label = Freq), fontface = "bold", vjust = 1.5,
+             position = position_dodge(.9), size = 4) +
+  labs(x = "\n Publication Outcome", y = "Frequency\n", title = "\n Clinical Research Publication \n") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_text(face="bold", colour="red", size = 12),
+        axis.title.y = element_text(face="bold", colour="red", size = 12),
+        legend.title = element_text(face="bold", size = 10))
+
+```
+
+Regarding the distribution of events, there is an equal occurrence of ProtocolPaper and protocolEvent. Both events are balanced in terms of occurrence.
+
+
+```{r}
+# Load the ggplot2 package 
+library(ggplot2)
+library(caret)
+# Create a confusion matrix 
+cm <- confusionMatrix(factor(myData$eventPaper), factor(myData$eventProtocol), dnn=c("eventPaper", "eventProtocol"))
+fourfoldplot(as.table(cm),color=c("green","red"),main = "Confusion Matrix")
+
+```
+It seem that there is no correlation between 'release a protocol', 'release a paper'. We will confirm by statistical test further
+
+In order to study the existence of linear correlation between the variables, we plot the correlation matrix. W e work only with continue variables. It appears that the variables are positively linearly correlated with each other (0.4).Except EstimatedSamplesize with nbMember and funding year with EstimatedSamplesize.
+```{r pressure, echo=FALSE}
+install.packages("corrplot")
+library(corrplot)
+df <- data.frame(myData$nbMembers, myData$fundingAwarded, myData$fundingYears, myData$estimatedSampleSize)
+matrice_corr <- cor(df)
+corrplot(matrice_corr, method="circle")
+```
+
+
+## Analysis of 'nbMembers' column
+
+```{r}
+histNbMembers <- hist(myData$nbMembers,
+     main = "nbMembers distribution",
+     xlab = "nbMembers",
+     ylab = "Frequency")
+
+boxNbMembers <- boxplot(myData$nbMembers,
+        main = "Boxplot of nbMembers",
+        ylab = "nbMembers")
+
+par(mfrow = c(1, 2))
+histNbMembers
+boxNbMembers
+
+mean(myData$nbMembers)
+median(myData$nbMembers)
+```
+
+The distribution of the nbMemebers column has 2 peaks, at 4 members and at 6 members, which seem to be the most popular research team sizes.
+The median & mean is almost the same (~5).
+
+nbMembers and success of publishing a paper:
+```{r}
+ggstatsplot::ggbetweenstats(
+  data = myData,
+  x = eventPaper, #grouping variable
+  y = nbMembers, #dependent variable 
+  # type = "robust", ## type of statistics
+  xlab = "Event outcome", ## label for the x-axis
+  ylab = "NbMembers", ## label for the y-axis
+  title = "Distributions of nbMembers grouped by eventPaper classifier",
+  plottype = "box", type = "p", conf.level = 0.95, results.subtitle = FALSE,
+  ) 
+```
+
+We don't see significant differences in the distributions of the nbMembers variabels when looking at it from the perspective of eventPaper == 0 vs 1, only the tails are slightly different.
+
+nbMembers and time to publish a paper:
+```{r}
+ggplot(myData, aes(x = nbMembers, y = timeToMainPaper, color = eventPaper)) +
+  geom_point() +
+  labs(title = "Relationship between nbMembers and timeToMainPaper", x = "nbMembers", y = "timeToMainPaper(years)")
+
+```
+
+We don't see any clear relationship between these 2 variables. However, what we already know and also clearly see from this plot is that in case of eventPaper == 0, the timeToMainPaper is > 6 years, which is not the case for eventPaper == 1.
+
+Based on the eventPaper data, it appears that the starting timestamps differ from one observation to another. In this case, the timestamps measuring the elapsed time at the end of eventPaper, with values of 0, should be very different from each other. However, this is not what we observe. Three timestamps are redundant for eventPaper -> 0. Additionally, these timestamps are lower than the timestamps for events where eventPaper -> 1. This suggests that the data quality is suspicious. Unfortunately, we do not have any further information on this matter.
+
+## Analysis of 'fundingAwarded' column
+
+```{r}
+histFundAwarded <- hist(myData$fundingAwarded,
+     main = "fundingAwarded distribution", probability = TRUE,
+     xlab = "fundingAwarded(AUD)",
+     ylab = "PDF")
+
+boxFundAwarded <- boxplot(myData$fundingAwarded,
+        main = "Boxplot of fundingAwarded",
+        ylab = "fundingAwarded(AUD)")
+
+par(mfrow = c(1, 2))
+histFundAwarded
+boxFundAwarded 
+
+mean(myData$fundingAwarded)
+median(myData$fundingAwarded)
+```
+
+We see that the distribution is right-skewed, with some outliers towards the higher-end of funding amount.
+
+fundingAwarded and nb of team members:
+```{r}
+ggplot(myData, aes(x = fundingAwarded, y = nbMembers, color = eventPaper)) +
+  geom_point() +
+  labs(title = "Relationship between fundingAwarded and nbMembers", x = "fundingAwarded (AUD)", y = "nbMembers")
+
+cor(myData["fundingAwarded"], myData["nbMembers"])
+```
+
+There is a significant linear relationship between these variables (0,4). With the growing funding awarded, the amount of team members is also growing.
+
+fundingAwarded and success of publishing a paper:
+
+```{r}
+ggstatsplot::ggbetweenstats(
+  data = myData,
+  x = eventPaper,
+  y = fundingAwarded, 
+  xlab = "Event outcome",
+  ylab = "fundingAwarded", 
+  title = "Distributions of fundingAwarded grouped by eventPaper classifier",
+  plottype = "box", type = "p", conf.level = 0.95, results.subtitle = FALSE,
+  )  
+```
+
+The distributions are the same for both categories, eventPaper == 1 vs 0.
+
+fundingAwarded and time to publish a paper:
+```{r}
+ggplot(myData, aes(x = fundingAwarded, y = timeToMainPaper, color = eventPaper)) +
+  geom_point() +
+  labs(title = "Relationship between fundingAwarded and timeToMainPaper", x = "fundingAwarded (AUD)", y = "timeToMainPaper (years)")
+
+cor(myData["fundingAwarded"], myData["timeToMainPaper"])
+
+```
+
+The only visible informormation from this plot is that for higher-funded papers(> 130,000 AUD), the time to paper is > 4 years
+
+## Analysis of 'fundingYears' column
+
+```{r}
+histFundYears <- hist(myData$fundingYears,
+                      main = "fundingYears distribution",
+                      xlab = "fundingYears",
+                      ylab = "Frequency")
+
+boxFundYears <- boxplot(myData$fundingYears,
+        main = "Boxplot of fundingYears",
+        ylab = "fundingYears")
+
+par(mfrow = c(1, 2))
+histFundYears
+boxFundYears   
+```
+
+The distribution of the FundingYears column has a median value of 5 years and mean of 4.7.
+We can also see some outliers, especially with higher number of fundingYears.
+
+funding years and the amount of funding awarded:
+```{r}
+ggplot(myData, aes(x = fundingYears, y = fundingAwarded, color = eventPaper)) +
+  geom_point() +
+  labs(title = "Relationship between fundingYears and fundingAwarded", x = "fundingYears (years))", y = "fundingAwarded (AUD)")
+
+cor(myData["fundingYears"], myData["fundingAwarded"])
+```
+
+There is a  linear relationship (cor 0.34) between these variables. With the growing funding years, the amount of funding awarded is also growing.
+
+fundingYears and success of publishing a paper:
+```{r}
+ggstatsplot::ggbetweenstats(
+  data = myData,
+  x = eventPaper,
+  y = fundingYears, 
+  xlab = "Event outcome",
+  ylab = "fundingYears", 
+  title = "Distributions of fundingYears grouped by eventPaper classifier",
+  plottype = "box", type = "p", conf.level = 0.95, results.subtitle = FALSE,
+  )  
+```
+
+The distribution fo the fundingYears variable is different for eventPaper == 1 vs 0. 
+The distribution for successfully published paper is right skewed, with a much lower mean and median than for eventPaper == 0
+
+
+```{r}
+histEstSampleSize <- hist(myData$estimatedSampleSize,
+     main = "estimatedSampleSize distribution",breaks =30, probability = TRUE,
+     xlab = "estimatedSampleSize",
+     ylab = "PDF")
+
+boxEstSampleSize <- boxplot(myData$estimatedSampleSize,
+        main = "Boxplot of estSampleSize",
+        ylab = "estimatedSampleSize")
+
+par(mfrow = c(1, 2))
+histEstSampleSize
+boxEstSampleSize
+
+```
+The distribution is highy right-skewed, with a lot of outliers on the towards the higher sample sizes.
+estimatedSampleSize and success of publishing a paper:
+```{r}
+violinEstSampleSizeEventPaper <- ggstatsplot::ggbetweenstats(
+  data = myData,
+  x = eventPaper,
+  y = estimatedSampleSize, 
+  xlab = "Event outcome",
+  ylab = "estimatedSampleSize", 
+  title = "Distributions of estimatedSampleSize grouped by eventPaper classifier",
+  plottype = "box", type = "p", conf.level = 0.95, results.subtitle = FALSE,
+  )  
+
+scatterEstSampleSizeTimeToEvent <- ggplot(myData, aes(x = estimatedSampleSize, y = timeToMainPaper, color = eventPaper)) +
+  geom_point() +
+  labs(title = "Relationship between estimatedSampleSize and timeToMainPaper", x = "estimatedSampleSize", y = "timeToMainPaper")
+
+
+
+
+par(mfcol = c(2, 2))
+grid.arrange(violinEstSampleSizeEventPaper, scatterEstSampleSizeTimeToEvent, ncol = 2)
+
+```
+The mean and the median are very similar for both categories.
+Looking at the relationship estimatedSampleSize and timeToMainPaper in the form of a scatterplot also doesn't reveal us any useful information.
+
+
+A variable graphic representation allows us to observe the distribution of different random variables. There doesn't appear to be any outlier.
+
+
+
+To study the evolution of the event "publishing a paper". I plot the survival function as a function of time.
+It is observed that the function does not reach 0 since only 50% of the groups are able to publish a paper.
+
+```{r pressure, echo=FALSE}
+# adding a nice way how to visualise survival-related plots
+install.packages(c("survival", "survminer"))
+library("survival")
+library("survminer")
+
+fit <- survfit(Surv(myData$timeToMainPaper, myData$eventPaper) ~ 1, data = myData)
+#
+
+ggsurvplot(fit,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"))
+
+
+
+```
+Create the Hazard Function
+To conduct an analysis of the "publishing" event, I need to process my temporal data. It appears that certain events do not result in a shorter time compared to other events that take longer. Therefore, I will select only the temporal data related to the events that do result and arrange them in ascending order.
+
+```{r pressure, echo=FALSE}
+par(mfcol = c(2, 2))
+# Selection of the values / time stamp where an event occured
+indices_event <- which(myData$eventPaper == 1)
+time = myData$timeToMainPaper[indices_event]
+time_sorted = time [order(time , decreasing = FALSE)] 
+```
+
+# Calcul of the cumulative distribution function (CDF)
+This plot allows for visualizing the cumulative distribution of the event over time and understanding the progression towards reaching the event.
+
+```{r pressure, echo=FALSE}
+
+cum_distribution = cumsum(myData$eventPaper[indices_event])/length(myData$eventPaper)
+plot(time_sorted, cum_distribution,ylim = c(0, 1), main="Cumulative distribution function",  type = "l",  xlab ='Time in years', ylab='cumulative  function S(t)')
+```
+
+
+# Clacul of the PDF
+PDF <- diff(cum_distribution) / diff(time_sorted)
+time <- time_sorted[-length(time_sorted)] 
+plot(time , PDF, main="PDF", type = "l", ylab="Density of probability", xlab="Number of years")
+
+
+This graph shows the instantaneous probabilities of publishing a paper.
+I observed that the graphical integration of the PDF did not equal 1 due to the "sawtooth" shape of the curve, which introduced significant inaccuracies.Indeed, the data is sparse and not evenly distributed across the time axis.
+
+I estimate the PDF because I need it for the hazard function.
+
+```{r pressure, echo=FALSE}
+PDF <- diff(cum_distribution) / diff(time_sorted)
+time <- time_sorted[-length(time_sorted)] 
+plot(time , PDF, main="PDF", type = "l", ylab="Density of probability", xlab="Number of years")
+
+```
+
+# Calcul Survival Function S(t)
+Survival analysis allows estimating the probability that the event 'publishing a paper' does not occur before a certain given time. As expected, 50% of the participants do not publish a paper.
+
+```{r pressure, echo=FALSE}
+survival = 1 - cum_distribution
+plot(time_sorted, survival,main='Survival Function', ylim = c(0, 1),  type = "l",  xlab ='Time in years', ylab='Survival function S(t)')
+```
+# Calcul of the hasard function
+The hazard function provides the instantaneous probability at any given time of publishing a paper. Since you mentioned using the probability density function (PDF), it shares similar limitations as the PDF itself. Having more data would likely result in a smoother curve and provide a more accurate representation.
+```{r pressure, echo=FALSE}
+hasard_function = PDF / survival[-length(survival)]
+plot(time , hasard_function, main="Hazard Function", type = "l", ylab="Density of probability", xlab="Number of years")
+```
+
+Does publishing an experimental protocol absolutely increase the chances of publishing a paper? This is the question we address here by comparing the two survival curves: one for those who have published a protocol (Group 1) and the other for those who haven't (Group 0).
+
+Hypothesis: Group membership has no influence.
+H 0 : S 1 (t) = S 0 (t)
+With a p-value of 0.1, we cannot reject this hypothesis, so we can consider that whether or not someone has submitted a protocol has no influence on their likelihood of writing a paper. 
+
+```{r pressure, echo=FALSE}
+
+dat <- data.frame(time=myData$timeToMainPaper, status=myData$eventPaper, group=myData$eventProtocol)
+survdiff(Surv(time, status) ~ group, data = dat)
+```
+
+
+Below, we can observe the both curves of the both group that:
+do not show a statistically significant difference  to ensure that the impact of having written a protocol influences the statistical distribution of 'paperEvent'.
+```{r}
+
+## groupings by eventProtocol
+dat <- data.frame(time=myData$timeToMainPaper, status=myData$eventPaper, group=myData$eventProtocol)
+fit <- survfit(Surv(time, status) ~ group, data = dat)
+
+# median for group 0 is 6.67, median for group 1 is 7.32
+ggsurvplot(fit,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"))
+
+
+
+```
+Create univariate cox model
+For the different variables, we check if they impact individually the event by checking the p-value
+If the p-value is bigger than a threshold ( here threshold = 0.05), we cannot reject the H0.
+The null hypothesis (H0) in this Cox model is that there is no significant relationship between the explanatory  (in the different cases) and the survival time (paper event). 
+
+```{r}
+
+# Impact of timeToProtocol
+res.cox <- coxph(Surv(timeToMainPaper, eventPaper) ~ timeToProtocol, data = myData)
+res.cox
+
+# the p value = 0.33 -> timeToProtocol has individually no impact on paperEvent
+
+
+```
+Impact of fundingYears
+```{r}
+
+res.cox <- coxph(Surv(timeToMainPaper, eventPaper) ~ fundingYears, data = myData)
+res.cox
+
+```
+
+the p value = 0.0068 -> fundingYears has individually impact on paperEvent
+
+
+Impact of nbMembers
+```{r}
+
+
+res.cox <- coxph(Surv(timeToMainPaper, eventPaper) ~ nbMembers, data = myData)
+res.cox
+
+
+```
+the p value = 0.68 -> nbMembers has individually no impact on paperEvent
+
+
+Impact of estSampleSize
+```{r}
+
+res.cox <- coxph(Surv(timeToMainPaper, eventPaper) ~ estimatedSampleSize, data = myData)
+res.cox
+
+```
+the p value = 0.62 -> estSampleSize has individually no impact on paperEvent
+
+
+Impact of fundingAwarded
+```{r}
+
+res.cox <- coxph(Surv(timeToMainPaper, eventPaper) ~ fundingAwarded, data = myData)
+res.cox
+
+```
+the p value = 0.956 -> fundingAwarded has individually no impact on paperEvent
+
+
+Now we must consider the combination of variables
+
+We will perform a multivariate cox regression analysis including these 2 variables alone to get a better grasp of this
+
+cox model with multiple covariates 
+
+```{r}
+
+res.cox <- coxph(Surv(timeToMainPaper, eventPaper) ~ fundingAwarded + fundingYears + nbMembers + estimatedSampleSize + timeToProtocol + eventProtocol, data = myData)
+res.cox
+
+
+
+```
+* In terms of variables, fundingYears, timeToProtocol and eventProtocol are significant: with a p value equal respectively to 0.03559, 0.04675 and 0.00773
+* All 3 of them in the negative direction, (value of the coef equal respectively to  -4.062e-01, -2.445e-01 and -1.713e+00)
+* It means that the higher the values (of the variables fundingYears, timeToProtocol and eventProtocol) associated with these coefficients, the less significant the chance of a paperEvent occurring.
+
+* It means that if a protocol occures, more it took time to get it (and more the fundingYears is important) less you have chance  to get a pepaerEvent.
+
+
+```{r}
+summary(res.cox)
+```
+The p-value for all three overall tests (likelihood, Wald, and score) are significant, indicating that the model is significant: null hypothesis is soundly rejected.
+
+In the multivariate Cox analysis, the covariates fundingYears, timeToProtocol and eventProtocol remain significant (p < 0.05). H
+
+The p-value for fundingYears is 0.03559 (statistically meaningful), with a hazard ratio HR = exp(coef) = 0.6662, indicating a low relationship between the fundingYears  and decreased risk of paperEvent. Actually decrease funding year of 1 involves increase paperEvent 0,6 % !
+
+The p-value for timeToProtocol is 0.04675 (statistically meaningful), with a hazard ratio HR = exp(coef) = 0.7831, indicating a low relationship between the timeToProtocol  and decreased risk of paperEvent.Actually decrease timeToProtocol year of 1 involves increase paperEvent  0.78 % !
+
+The p-value for eventProtocol is 0.00773 (statistically meaningful), with a hazard ratio HR = exp(coef) = 0.1803, indicating a light  relationship between the eventProtocol  and decreased risk of paperEvent. Have protocolEvent increase of 18% to have a paperEvent
+
+
+
+
+
+
+The hazard ratios of covariates are interpretable as multiplicative effects on the hazard. For example, holding the other covariates constant, being female (sex=2) reduces the hazard by a factor of 0.58, or 42%. We conclude that, being female is associated with good prognostic.
+
+Similarly, the p-value for ph.ecog is 4.45e-05, with a hazard ratio HR = 1.59, indicating a strong relationship between the ph.ecog value and increased risk of death. Holding the other covariates constant, a higher value of ph.ecog is associated with a poor survival.
+
+By contrast, the p-value for age is now p=0.23. The hazard ratio HR = exp(coef) = 1.01, with a 95% confidence interval of 0.99 to 1.03. Because the confidence interval for HR includes 1, these results indicate that age makes a smaller contribution to the difference in the HR after adjusting for the ph.ecog values and patient’s sex, and only trend toward significance. For example, holding the other covariates constant, an additional year of age induce daily hazard of death by a factor of exp(beta) = 1.01, or 1%, which is not a significant contribution.
+
+
+
+# this especially for fundingYears contradicts with the results of the univariate cox model for this variable
+
+
+
