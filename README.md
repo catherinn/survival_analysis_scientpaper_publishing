@@ -6,11 +6,13 @@
 
 
 ## Context
-According to the World Health Organisation (WHO), stroke is the 2nd leading cause of death globally, responsible for approximately 11% of total deaths.
+National Health and Medical Research Council (NHMRC) Project Grants are the biggest source of funding in Australia for clinical trials. 
+The purpose of the analysis is to evaluate whether (1) the funding received from this body (= public sources) is well used and (2) the end-goal of all scientific researches is met (i.e. sharing of the knowledge with the community). The business goal is to measure the efficiency of public fundings and to provide means to leverage in order to progress toward scientific excellence.
+
 
 
 ## Scope
-The goal of the survival analysis is To examine the length of time between receiving funding and publishing the protocol and main paper for randomised controlled trials.
+The goal of the survival analysis is to examine the length of time between receiving funding and publishing the protocol and main paper for randomised controlled trials.
 The source of the data: https://figshare.com/articles/dataset/Time_to_publication_data/4054878
 
 
